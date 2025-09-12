@@ -69,7 +69,7 @@ indices = np.random.choice(N, size=NUM_EXAMPLES, replace=True)
 samples = shuffled_dataset.select(indices.tolist())
 
 # Prepare prompts — reverse task: use TL;DR (completion) as the prompt
-prompts = [sample["completion"] for sample in samples]  # << swapped
+prompts = ["New post:\nTLDR:"+sample["completion"]+"\nSUBREDDIT:" for sample in samples]  # << swapped
 
 # Generate completions in batches
 results_data = []
