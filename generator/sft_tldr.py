@@ -84,7 +84,7 @@ class LanguageModel:
 
             #no chat template is using a base model
             prompt_text = question
-            prompt_text = "\nTLDR:"+prompt_text+"\nSUBREDDIT:"
+            prompt_text = "New post:\nTLDR:"+prompt_text+"\nSUBREDDIT:"
 
             inputs = self.tokenizer(prompt_text, return_tensors="pt").to(self.device)
 
@@ -158,7 +158,7 @@ for item in tqdm(train_data):
     # REVERSE: TL;DR becomes the prompt, post becomes the answer
     question = item["completion"]
     answer = item["prompt"]
-    prompt_str = "\nTLDR:"+question+"\nSUBREDDIT:"
+    prompt_str = "New post:\nTLDR:"+question+"\nSUBREDDIT:"
     prompt_ids = tokenizer.encode(prompt_str, add_special_tokens=False)
     full_str = prompt_str + answer + tokenizer.eos_token
     full_ids = tokenizer.encode(full_str, add_special_tokens=False)
