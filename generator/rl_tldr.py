@@ -95,7 +95,7 @@ class LanguageModel:
             with torch.no_grad():
                 output_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=300,
+                    max_new_tokens=1024,  # << increased from 300
                     temperature=1,
                     do_sample=True,
                     top_p=1,
@@ -135,7 +135,7 @@ warmup_ratio = 0.1
 ppo_clip_epsilon = 0.3
 
 model_name = "NousResearch/Llama-3.2-1B"
-hub_model_id = "ultra-grok/model_tldr"
+hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
 lm = LanguageModel(model_name, device)
 lm.model.train()
 tokenizer = lm.tokenizer
@@ -152,7 +152,7 @@ checkpoint_dir = os.path.join(log_dir, "latest_checkpoint")
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 
-HUB_DATASET_ID = "ultra-grok/tldr_sft_gen"
+HUB_DATASET_ID = "ultra-grok/tldr_sft_genreverse"  # << changed
 ADAPTER_REVISION = "2sft"
 
 # --- Load the specific revision of the dataset from the Hub ---
