@@ -11,18 +11,18 @@ from tqdm import tqdm
 # Define configurations (adapt as needed)
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 MODEL_NAME = "NousResearch/Llama-3.2-1B"
-CHECKPOINT_DIR = "ultra-grok/model_tldr"
+CHECKPOINT_DIR = "ultra-grok/model_tldrreverse"  # << changed
 DATASET_ID = "trl-lib/tldr"
 SPLIT = "validation"  
 NUM_EXAMPLES = 10000  # Adjust as needed
 SEED = 42
-MAX_NEW_TOKENS = 300
-BATCH_SIZE = 128  # For batched generation
-HUB_DATASET_ID = "ultra-grok/tldr_sft_gen" 
+MAX_NEW_TOKENS = 1024  # << increased for long posts
+BATCH_SIZE = 8  # << reduced to fit memory with long generations
+HUB_DATASET_ID = "ultra-grok/tldr_sft_genreverse"  # << changed
 ADAPTER_REVISION = "2sft"  # Or specific revision
 TEMPERATURE = 1
 TOP_P = 1.0
-hub_model_id = "ultra-grok/model_tldr"
+hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
 
 # Set seeds
 random.seed(SEED)
@@ -68,8 +68,8 @@ N = len(shuffled_dataset)
 indices = np.random.choice(N, size=NUM_EXAMPLES, replace=True)
 samples = shuffled_dataset.select(indices.tolist())
 
-# Prepare prompts
-prompts = [sample["prompt"] for sample in samples]
+# Prepare prompts — reverse task: use TL;DR (completion) as the prompt
+prompts = [sample["completion"] for sample in samples]  # << swapped
 
 # Generate completions in batches
 results_data = []
@@ -109,7 +109,6 @@ for start_idx in tqdm(range(0, len(prompts), BATCH_SIZE)):
             completion = full_text.strip()
 
         # Score is based on the length of the completion, not the total length
-        # This aligns with the goal of controlling summary length.
         completion_len = len(completion)
         raw_scores.append(completion_len)
 
