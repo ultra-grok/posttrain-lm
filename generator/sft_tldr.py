@@ -78,11 +78,12 @@ class LanguageModel:
 
         for i, idx in enumerate(sample_indices):
             sample = dataset[idx]
-            question = sample["prompt"]
-            ground_truth_answer = sample["completion"]
+            # REVERSE: TL;DR is the prompt, post is the ground truth
+            question = sample["completion"]
+            ground_truth_answer = sample["prompt"]
 
             #no chat template is using a base model
-            prompt_text =question
+            prompt_text = question
 
             inputs = self.tokenizer(prompt_text, return_tensors="pt").to(self.device)
 
@@ -101,8 +102,8 @@ class LanguageModel:
             model_answer = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
 
             print(f"--- SAMPLE {i+1}/{num_samples} (Example #{idx}) ---")
-            print(f"QUESTION:\n{question}\n")
-            print(f"GROUND TRUTH:\n{ground_truth_answer}\n")
+            print(f"QUESTION (TL;DR):\n{question}\n")
+            print(f"GROUND TRUTH (Post):\n{ground_truth_answer}\n")
             print(f"MODEL OUTPUT:\n{model_answer.strip()}\n")
             print("="*50 + "\n")
 
@@ -119,7 +120,7 @@ random.seed(42)
 max_grad_norm = 1.0
 batch_size = 2
 gradient_accumulation_steps = 4
-block_size = 1024
+block_size = 2048  # << increased to handle longer posts
 num_epochs = 1
 weight_decay = 0.1
 max_lr = 3e-5
@@ -127,7 +128,7 @@ min_lr = 3e-6
 warmup_ratio = 0.1
 verbose = False
 do_checkpoint = True
-hub_model_id = "ultra-grok/model_tldr"
+hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
 
 model_name = "NousResearch/Llama-3.2-1B"
 lm = LanguageModel(model_name, device)
@@ -152,12 +153,10 @@ input_ids_list = []
 labels_list = []
 
 # --- Data Packing Strategy ---
-# To maximize training efficiency, we concatenate all tokenized examples into a single
-# long sequence. Then, during training, we sample random chunks of 'block_size'.
-# This is much faster than padding individual examples.
 for item in tqdm(train_data):
-    question = item["prompt"]
-    answer = item["completion"]
+    # REVERSE: TL;DR becomes the prompt, post becomes the answer
+    question = item["completion"]
+    answer = item["prompt"]
     prompt_str = question
     prompt_ids = tokenizer.encode(prompt_str, add_special_tokens=False)
     full_str = prompt_str + answer + tokenizer.eos_token
