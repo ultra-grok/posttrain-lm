@@ -91,7 +91,7 @@ class LanguageModel:
             with torch.no_grad():
                 output_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=100,
+                    max_new_tokens=500,
                     temperature=1,
                     do_sample=True,
                     top_p=1,
@@ -119,7 +119,7 @@ if torch.cuda.is_available():
 random.seed(42)
 
 max_grad_norm = 1.0
-batch_size = 2
+batch_size = 1
 gradient_accumulation_steps = 4
 block_size = 2048  # << increased to handle longer posts
 num_epochs = 1
@@ -127,11 +127,11 @@ weight_decay = 0.1
 max_lr = 3e-5
 min_lr = 3e-6
 warmup_ratio = 0.1
-verbose = False
+verbose = True
 do_checkpoint = True
 hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
 
-model_name = "NousResearch/Llama-3.2-1B"
+model_name = "NousResearch/Llama-2-7b-hf"
 lm = LanguageModel(model_name, device)
 lm.model.train()
 tokenizer = lm.tokenizer
@@ -190,7 +190,7 @@ for epoch in range(num_epochs):
     pbar = tqdm(range(num_steps_per_epoch), desc=f"Epoch {epoch+1}/{num_epochs}")
     for step in pbar:
         if verbose:
-            if step%1000 == 0:
+            if step%1500 == 300:
                 lm.generate_samples(
                     dataset=train_data,
                     sample_indices=eval_sample_indices,
