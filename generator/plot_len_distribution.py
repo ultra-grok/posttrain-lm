@@ -3,9 +3,9 @@ from datasets import load_dataset
 import numpy as np
 
 # --- Configuration ---
-HUB_DATASET_ID = "ultra-grok/tldr_sft_gen"
+HUB_DATASET_ID = "ultra-grok/tldr_sft_genreverse"  # << changed
 ADAPTER_REVISION = "2sft"
-OUTPUT_FILENAME = "len_"+ADAPTER_REVISION+"_distribution.png"
+OUTPUT_FILENAME = "len_"+ADAPTER_REVISION+"_distribution_reverse.png"  # << optional
 
 def plot_score_distribution():
     """
