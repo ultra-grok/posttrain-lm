@@ -27,18 +27,18 @@ class LanguageModel:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # 1. Load the base model in bfloat16 (no 4-bit quantization)
-        base_model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto"
-        )
-        # Optional (if flash-attn is installed and compatible with your CUDA/PyTorch):
         # base_model = AutoModelForCausalLM.from_pretrained(
         #     model_name,
         #     torch_dtype=torch.bfloat16,
-        #     device_map="auto",
-        #     attn_implementation="flash_attention_2"
+        #     device_map="auto"
         # )
+        # Optional (if flash-attn is installed and compatible with your CUDA/PyTorch):
+        base_model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            attn_implementation="flash_attention_2"
+        )
 
         # 2. Configure LoRA adapters
         lora_config = LoraConfig(
