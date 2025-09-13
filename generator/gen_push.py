@@ -2,7 +2,7 @@ import os
 import random
 import numpy as np
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 from datasets import load_dataset, Dataset, DatasetDict
 from torch.nn.utils.rnn import pad_sequence
@@ -24,6 +24,7 @@ TEMPERATURE = 1
 TOP_P = 1.0
 hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
 verbose = True
+
 # Set seeds
 random.seed(SEED)
 np.random.seed(SEED)
@@ -32,20 +33,16 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 # Load tokenizer
-tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT_DIR, revision = ADAPTER_REVISION)
+tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT_DIR, revision=ADAPTER_REVISION)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-# Load base model with quantization
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16
-)
+# Load base model in BF16 with FlashAttention 2
 base_model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    quantization_config=quantization_config,
-    device_map="auto"
+    torch_dtype=torch.bfloat16,
+    device_map="auto",
+    attn_implementation="flash_attention_2"
 )
 
 # Load PEFT model from checkpoint
@@ -69,7 +66,7 @@ indices = np.random.choice(N, size=NUM_EXAMPLES, replace=True)
 samples = shuffled_dataset.select(indices.tolist())
 
 # Prepare prompts — reverse task: use TL;DR (completion) as the prompt
-prompts = ["New post:\nTLDR:"+sample["completion"]+"\nSUBREDDIT:" for sample in samples]  # << swapped
+prompts = ["New post:\nTLDR:" + sample["completion"] + "\nSUBREDDIT:" for sample in samples]  # << swapped
 
 # Generate completions in batches
 results_data = []
@@ -120,10 +117,10 @@ for start_idx in tqdm(range(0, len(prompts), BATCH_SIZE)):
         })
         if verbose:
             print({
-            "prompt": prompt_text,
-            "completion": completion,
-            "score": -completion_len  # Score is negative length of the summary
-        })
+                "prompt": prompt_text,
+                "completion": completion,
+                "score": -completion_len
+            })
 
 # Standardize scores
 raw_scores = np.array(raw_scores)
