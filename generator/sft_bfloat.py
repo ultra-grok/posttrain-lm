@@ -6,8 +6,7 @@ import torch
 from torch.nn import functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_from_disk, load_dataset
-#peft
-from transformers import BitsAndBytesConfig
+# peft
 from peft import LoraConfig, get_peft_model, TaskType
 
 def get_lr(it, max_steps, warmup_steps, max_lr, min_lr):
@@ -27,23 +26,21 @@ class LanguageModel:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        #peft
-        # 1. Configure quantization to load the model in 4-bit for memory efficiency
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
-
-        # 2. Load the base model with the quantization config
-        # device_map="auto" will handle placing the model on the correct device (e.g., GPU)
+        # 1. Load the base model in bfloat16 (no 4-bit quantization)
         base_model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
             device_map="auto"
         )
+        # Optional (if flash-attn is installed and compatible with your CUDA/PyTorch):
+        # base_model = AutoModelForCausalLM.from_pretrained(
+        #     model_name,
+        #     torch_dtype=torch.bfloat16,
+        #     device_map="auto",
+        #     attn_implementation="flash_attention_2"
+        # )
 
-        # 3. Configure LoRA adapters
+        # 2. Configure LoRA adapters
         lora_config = LoraConfig(
             r=16, # Rank of the update matrices. Lower rank means fewer parameters to train.
             lora_alpha=32, # Alpha parameter for scaling.
@@ -54,7 +51,7 @@ class LanguageModel:
             task_type=TaskType.CAUSAL_LM,
         )
 
-        # 4. Create the PEFT model by wrapping the base model with LoRA config
+        # 3. Create the PEFT model by wrapping the base model with LoRA config
         self.model = get_peft_model(base_model, lora_config)
 
         # Optional: Print the number of trainable parameters to see the difference
@@ -82,7 +79,7 @@ class LanguageModel:
             question = sample["completion"]
             ground_truth_answer = sample["prompt"]
 
-            #no chat template is using a base model
+            # no chat template is using a base model
             prompt_text = question
             prompt_text = "New post:\nTLDR:"+prompt_text+"\nSUBREDDIT:"
 
