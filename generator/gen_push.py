@@ -23,7 +23,7 @@ ADAPTER_REVISION = "2sft"  # Or specific revision
 TEMPERATURE = 1
 TOP_P = 1.0
 hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
-
+verbose = False
 # Set seeds
 random.seed(SEED)
 np.random.seed(SEED)
@@ -114,6 +114,12 @@ for start_idx in tqdm(range(0, len(prompts), BATCH_SIZE)):
         raw_scores.append(completion_len)
 
         results_data.append({
+            "prompt": prompt_text,
+            "completion": completion,
+            "score": -completion_len  # Score is negative length of the summary
+        })
+        if verbose:
+            print({
             "prompt": prompt_text,
             "completion": completion,
             "score": -completion_len  # Score is negative length of the summary
