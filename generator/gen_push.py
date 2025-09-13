@@ -91,7 +91,8 @@ for start_idx in tqdm(range(0, len(prompts), BATCH_SIZE)):
             temperature=TEMPERATURE,
             do_sample=True,
             top_p=TOP_P,
-            pad_token_id=tokenizer.pad_token_id
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
         )
 
     # Decode all outputs at once
