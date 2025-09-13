@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 # Define configurations (adapt as needed)
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-MODEL_NAME = "NousResearch/Llama-3.2-1B"
+MODEL_NAME = "NousResearch/Llama-2-7b-hf"
 CHECKPOINT_DIR = "ultra-grok/model_tldrreverse"  # << changed
 DATASET_ID = "trl-lib/tldr"
 SPLIT = "validation"  
@@ -23,7 +23,7 @@ ADAPTER_REVISION = "2sft"  # Or specific revision
 TEMPERATURE = 1
 TOP_P = 1.0
 hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
-verbose = False
+verbose = True
 # Set seeds
 random.seed(SEED)
 np.random.seed(SEED)
