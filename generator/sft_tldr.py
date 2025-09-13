@@ -95,8 +95,8 @@ class LanguageModel:
                     temperature=1,
                     do_sample=True,
                     top_p=1,
-                    pad_token_id=self.tokenizer.pad_token_id
-                    eos_token_id=self.tokenizer.eos_token_id
+                    pad_token_id=self.tokenizer.pad_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
                 )
 
             prompt_length = inputs['input_ids'].shape[1]
