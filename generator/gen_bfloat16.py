@@ -10,14 +10,14 @@ from tqdm import tqdm
 
 # Define configurations (adapt as needed)
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-MODEL_NAME = "NousResearch/Llama-2-7b-hf"
+MODEL_NAME = "NousResearch/Meta-Llama-3-8B"
 CHECKPOINT_DIR = "ultra-grok/model_tldrreverse"  # << changed
 DATASET_ID = "trl-lib/tldr"
 SPLIT = "validation"  
 NUM_EXAMPLES = 10000  # Adjust as needed
 SEED = 42
 MAX_NEW_TOKENS = 1024  # << increased for long posts
-BATCH_SIZE = 8  # << reduced to fit memory with long generations
+BATCH_SIZE = 128  # << reduced to fit memory with long generations
 HUB_DATASET_ID = "ultra-grok/tldr_sft_genreverse"  # << changed
 ADAPTER_REVISION = "2sft"  # Or specific revision
 TEMPERATURE = 1
