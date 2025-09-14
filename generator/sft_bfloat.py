@@ -37,7 +37,7 @@ class LanguageModel:
             model_name,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            attn_implementation="flash_attention_2"
+            # attn_implementation="flash_attention_2"
         )
 
         # 2. Configure LoRA adapters
@@ -117,16 +117,16 @@ if torch.cuda.is_available():
 random.seed(42)
 
 max_grad_norm = 1.0
-batch_size = 4
+batch_size = 2
 gradient_accumulation_steps = 1
-block_size = 2048  # << increased to handle longer posts
+block_size = 4096  # << increased to handle longer posts
 num_epochs = 1
 weight_decay = 0.1
 max_lr = 3e-5
 min_lr = 3e-6
 warmup_ratio = 0.1
 verbose = True
-do_checkpoint = False
+do_checkpoint = True
 hub_model_id = "ultra-grok/model_tldrreverse"  # << changed
 
 model_name = "NousResearch/Meta-Llama-3-8B"
