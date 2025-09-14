@@ -42,7 +42,7 @@ base_model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
     torch_dtype=torch.bfloat16,
     device_map="auto",
-    attn_implementation="flash_attention_2"
+    # attn_implementation="flash_attention_2"
 )
 
 # Load PEFT model from checkpoint
