@@ -1,200 +1,160 @@
-# Post-training language models (SFT → RL), with TL;DR summary length control as an example.
+# Self-Judging AI for Post Generation
 
 **TL;DR**
 
-We start with a pretrained language model and the [TL;DR dataset](https://huggingface.co/datasets/trl-lib/tldr) containing Reddit posts and their summaries. We then apply the following two-step process:
+This project explores a self-improvement loop for text generation. The core hypothesis is that **judging text quality is an easier task than generating it**. We start with a pretrained language model and the [TL;DR dataset](https://huggingface.co/datasets/trl-lib/tldr).
 
-  * **Step 1: Supervised Fine-Tuning (SFT)**
-    We train a supervised policy on the `post -> summary` task.
+* **Step 1: Supervised Fine-Tuning (SFT)**
+    We train a model on a **reverse task**: generating a full Reddit post from a given TL;DR summary.
 
-  * **Step 2: Reinforcement Learning (RL)**
-    We optimize the policy against a reward function shaped to favor summaries of a medium length, discouraging overly long or short outputs.
+* **Step 2: Synthetic Data Generation**
+    We use the SFT model to generate a large dataset of synthetic Reddit posts.
 
-**Result**: This process yields high-quality summaries while achieving an **\~7× variance reduction** (from 1100 to 150) in output length, stabilizing the mean at \~140 characters with no observed degradation in summary quality.
+* **Step 3: Critic Training**
+    We train a "critic" to distinguish between real, human-written posts and our synthetically generated ones.
 
-  * **Demo Viewer (SFT vs. RL)**: [https://ultra-grok.github.io/my-site-viewer](https://ultra-grok.github.io/my-site-viewer)
+**Result**: The critic's internal score serves as a strong proxy for text quality, correlating well with ratings from an external judge (Google's Gemini 2.5 Pro). This allows for efficient, large-scale filtering of synthetic data to select only the highest-quality examples.
 
------
+* **Interactive Demo Viewer**: [https://ultra-grok.github.io/my-site-viewer](https://ultra-grok.github.io/my-site-viewer). View the generated posts and hover over tokens to see the critic's live probability trace.
 
-## 1\. Installation
+---
 
-1.  **Clone the repository:**
+## Key Result: Critic Score Correlates with Quality
 
-    ```bash
-    git clone https://github.com/ultra-grok/posttrain-lm.git
-	cd posttrain-lm
-	```
-
-2.  **Install the required packages:**
-    It is recommended to use a virtual environment.
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
------
-
-## 2\. Goal
-
-We tune the model in two stages. First, we teach it to summarize. Second, we teach it to stay within a target length.
-
-### 2.1. Supervised Fine-Tuning (SFT)
-
-The model first learns the summarization task, but its output length is inconsistent.
-
-**Prompt Snippet:**
-
-> SUBREDDIT: r/relationships
->
-> TITLE: My sister (28F) is demanding I (30F)...
->
-> POST: ...she's become a complete bridezilla and is demanding all bridesmaids dye their hair champagne blonde for her 'aesthetic'... I refused, and now she's threatening to kick me out of the wedding...
->
-> TL;DR:
-
-**Typical SFT Output (Often too long or short):**
-
-> "The user wants to know if they are in the wrong for refusing to dye their dark brown hair blonde for their sister's wedding aesthetic..."
-
-### 2.2. Reinforcement Learning (RL) for Length Control
-
-The RL stage rewards summaries that are both accurate and within a target length, teaching the model to avoid outputs that are too brief or too verbose.
-
-| Model TLDR Output                                                                                         | Reward   | Why?                 |
-| --------------------------------------------------------------------------------------------------------- | :------: | -------------------- |
-| "Sister angry about hair dye."                                                                            |   Low    | too short            |
-| "My sister wants me to dye my hair; I refused, and she might kick me out of the wedding."                   | **High** | concise & complete   |
-| "A person is in a conflict with ... [200 characters omitted]"                                             |   Low    | too long             |
-
-This process creates a model that reliably produces well-formed summaries of a predictable length.
-
------
-
-## 3\. Training Methodology
-
-### 3.1. Supervised Fine-Tuning (SFT)
-
-We start with the **`NousResearch/Llama-3.2-1B`** base model, and quantized to 4-bits for memory efficiency. Using the **`trl-lib/tldr`** dataset, we fine-tune the model for a single epoch with a supervised, next-token prediction objective.
-
-The training is performed using **LoRA** (Low-Rank Adaptation) and the AdamW optimizer, with a cosine learning rate decay.
-
-### 3.2. Reinforcement Learning (RL) for Length Control
-
-To control summary length, we further refine the SFT model using a **PPO-style objective**. This stage uses the SFT model as a frozen reference to ensure the new model doesn't forget how to summarize well. The total loss is calculated as the policy loss plus a KL-divergence penalty, averaged over all summary tokens in a batch.
-
-**Final Loss = PolicyLoss + (beta \* KLDivergence)**
-
-Here's a breakdown of each component:
-
-  * **PolicyLoss**: This is the core of PPO, designed to increase the probability of outputs that lead to higher rewards. It's calculated as the negative of the "clipped surrogate objective."
-
-      * `advantage`: A score given to each summary token. It's high if the summary's length is near our target and low otherwise.
-      * `ratio`: The probability ratio, calculated as `new_policy_prob(token) / frozen_sft_prob(token)`.
-      * `PolicyLoss = -min(ratio * advantage, clipped_ratio * advantage)`
-
-  * **KLDivergence**: This is a penalty term that keeps the new RL model's behavior close to the original SFT model. It prevents the model from sacrificing summary quality for the sake of getting the length right. We use a stable and non-negative estimator for the KL divergence:
-
-      * `r = frozen_sft_prob(token) / new_policy_prob(token)`
-      * `KLDivergence = r - 1 - log(r)`
-
-  * **beta**: A small coefficient (e.g., `0.01`) that controls how heavily we penalize the model for deviating from the SFT policy.
-
-### 3.3. Key RL Implementation Details
-
-#### 3.3.1. Stable KL-Divergence Estimator
-
-The specific formula for `KLDivergence` (`r - 1 - log(r)`) was chosen because it is **always non-negative**. This provides a more stable training signal compared to naive KL estimators, which can sometimes produce negative values due to sampling error. This approach is discussed by John Schulman in his blog post on [Approximating KL Divergence](http://joschu.net/blog/kl-approx.html).
-
-#### 3.3.2. Tuning the KL-Divergence
-
-We tune the `beta` coefficient by monitoring the KL-divergence during training. Our goal is to match a target KL derived from the "Best-of-N" sampling principle. For example, to achieve a quality level comparable to sampling 3 times and picking the best summary (Best-of-3), we would aim for a target KL of `log(3) - 2/3 ≈ 0.43`. This provides a principled way to set the divergence budget. (Reference: [Best-of-N KL Targets](https://www.jacobh.co.uk/bon_kl.pdf)).
-
-#### 3.3.3. Per-Token Advantage Calculation
-
-The advantage signal is calculated in several steps to create a stable reward that peaks for average-length summaries:
-
-  * **Raw Score**: The initial score for each summary is its negative length (`-length`), which is then standardized (z-scored) across all generated examples. A z-score of `0` means the summary has an average length.
-  * **Reward Shaping**: The z-score is transformed into a reward signal using the formula `Reward = 1 - abs(z_score)`. This creates a reward that peaks at `1.0` for summaries of average length and decreases for those that are shorter or longer.
-  * **Token-Level Distribution**: The summary-level reward is then distributed evenly across each of its tokens:
-    `Per-Token Advantage = TotalReward / NumberOfTokensInCompletion`
-  * **Advantage Whitening**: Finally, within each training mini-batch, we **normalize** these per-token advantages (subtracting the batch mean and dividing by the standard deviation).
-
------
-
-## 4\. Qualitative Analysis & Limitations
-
-As demonstrated in the [Live Demo Viewer](https://ultra-grok.github.io/my-site-viewer), the RL-tuned model successfully produces summaries of a consistent length. However, this control introduces clear trade-offs:
-
-  * **Loss of Nuance:** On complex prompts, the strict length constraint can force the model to omit secondary details that the more verbose SFT model might have captured.
-  * **Abrupt Endings:** To meet the length target, the model sometimes concludes a summary with an incomplete sentence followed by an ellipsis (`...`). While functional, this can make the output feel ambiguous or unfinished.
-
------
-
-## 5\. Results: Variance Reduction Visualized
-
-The plots below visualize the primary achievement of this project: a significant reduction in the variance of summary lengths after RL fine-tuning. The initial SFT model produces summaries with a wide and scattered length distribution. After RL, the model's outputs are tightly clustered around the target mean, demonstrating the effectiveness of the reward-shaping approach.
+The plot below is the central finding of this project. It shows that as our internal critic's score increases (moving from "Baseline" to "Top 5%"), the final quality score assigned by Gemini 2.5 Pro also increases significantly, especially for shorter texts (Q1-Q3).
 
 <table align="center">
 <tr>
-<td align="center"><b>Before RL (SFT Model)</b></td>
-<td align="center"><b>After RL (Variance-Controlled Model)</b></td>
+<td align="center"><b>Evaluating a Self-Judging AI: Critic's Score vs. Final Quality</b></td>
 </tr>
 <tr>
 <td>
-<img src="./docs/len_2sft_distribution.png" width="400">
-</td>
-<td>
-<img src="./docs/len_1rl_distribution.png" width="400">
+<img src="./docs/plot_result.png" width="700">
 </td>
 </tr>
 </table>
 
------
+---
 
-## 6\. Links and References
+## 1. Installation
 
-  - **Base model**: [https://huggingface.co/NousResearch/Llama-3.2-1B](https://huggingface.co/NousResearch/Llama-3.2-1B)
-  - **TL;DR dataset**: [https://huggingface.co/datasets/trl-lib/tldr](https://huggingface.co/datasets/trl-lib/tldr)
-  - **Model adapters**: [https://huggingface.co/ultra-grok/model\_tldr](https://huggingface.co/ultra-grok/model_tldr)
-  - **Generated dataset**: [https://huggingface.co/datasets/ultra-grok/tldr\_sft\_gen](https://huggingface.co/datasets/ultra-grok/tldr_sft_gen)
-  - **Viewer (Pages)**: [https://ultra-grok.github.io/my-site-viewer](https://ultra-grok.github.io/my-site-viewer)
-  - **Stable KL estimator**: [http://joschu.net/blog/kl-approx.html](http://joschu.net/blog/kl-approx.html)
-  - **Best-of-N KL targets**: [https://www.jacobh.co.uk/bon\_kl.pdf](https://www.jacobh.co.uk/bon_kl.pdf)
-  - **GRPO reference**: [https://arxiv.org/abs/2402.03300](https://arxiv.org/abs/2402.03300)
-
------
-
-## 7\. Changelog
-
-  - **v0.1**
-      - SFT → generation → RL pipeline
-      - Viewer and distribution plots
-
------
-
-## 8\. Appendix: Minimal Commands
-
-  - **Train SFT**:
+1.  **Clone the repository:**
     ```bash
-    python sft_tldr.py
+    git clone [https://github.com/ultra-grok/posttrain-lm.git](https://github.com/ultra-grok/posttrain-lm.git)
+    cd posttrain-lm
     ```
-  - **Create standardized generation dataset**:
-    ```bash
-    python gen_push.py
-    ```
-  - **Train RL**:
-    ```bash
-    python rl_tldr.py
-    ```
-  - **Plot len() Distribution**:
-    ```bash
-    python plot_len_distribution.py
-    ```
-Of course, here is a more concise version.
 
------
+2.  **Install the required packages:**
+    It is recommended to use a virtual environment.
+    ```bash
+    pip install -r generator/requirements.txt
+    ```
 
-## 9. To-Do
+---
 
-* **Configuration**: Replace hardcoded variables with `argparse` to simplify experiments.
-* **Refactor Shared Code**: Move duplicated code, such as the `LanguageModel` class, into a common `utils.py` file to improve maintainability.
+## 2. Goal
+
+The project's goal is to create a system that can generate high-quality, long-form text and accurately judge its own output. This is broken down into two main phases.
+
+### 2.1. Supervised Fine-Tuning (SFT) for Post Generation
+
+First, the model learns the "reverse-TLDR" task: generating a plausible, full-length Reddit post based only on a short summary.
+
+**Prompt Snippet (Input):**
+> New post:
+> TLDR:My sister wants me to dye my hair; I refused, and she might kick me out of the wedding.
+> SUBREDDIT:
+
+**SFT Model Output (Generated Post):**
+> My (30F) sister (28F) is getting married in a few months. She's become a complete bridezilla and is demanding all bridesmaids dye their hair champagne blonde for her 'aesthetic'. I have naturally dark brown hair and I don't want to damage it with bleach. I refused, and now she's threatening to kick me out of the wedding...
+
+### 2.2. Critic Model for Quality Filtering
+
+After generating thousands of posts, we need a way to filter out the incoherent or poorly written ones. To do this, we train a critic model to predict a token-level probability that distinguishes between authentic human-written posts and posts generated by our SFT model.
+
+---
+
+## 3. Methodology
+
+### 3.1. Supervised Fine-Tuning (SFT)
+
+We fine-tune a large language model for a single epoch on the reverse task (`TL;DR -> Post`). The training uses **LoRA** (Low-Rank Adaptation) for parameter-efficient fine-tuning, leveraging `bfloat16` for improved speed and memory usage.
+
+### 3.2. Critic Training
+
+1.  **Model Architecture**: We take the SFT-trained generator model and attach a single **linear layer** (`discriminator_head`) to the output of the final transformer block. During this phase, we train **both the LoRA adapters and the new linear head**.
+
+2.  **Training Data**: The critic is trained on a mixed dataset:
+    * **Positive Examples (Label = 1)**: Real posts from the original `trl-lib/tldr` dataset.
+    * **Negative Examples (Label = 0)**: Synthetic posts created by our SFT generator.
+
+3.  **Training Objective**: The model is trained with a standard **Binary Cross-Entropy (BCE)** loss. The goal is for the critic head to predict a high probability for tokens from real posts and a low probability for tokens from generated posts.
+
+4.  **Inference and Scoring**: By examining the probability traces in the **interactive viewer**, we discovered that the **sum of the logits for the last 5 tokens** serves as a powerful heuristic for the overall quality of a generated post. The intuition is that the model's confidence and coherence as it concludes the generation is a strong proxy for the quality of the entire passage.
+
+### 3.3. External Validation with Gemini
+
+To validate our critic's effectiveness, we used the **Google Gemini 2.5 Pro API** to rate a subset of our generated posts on a scale of 0-100. This gave us a "gold standard" to prove our cheap, internal critic measures something meaningful about human-perceived quality.
+
+---
+
+## 4. Results and Analysis
+
+The analysis reveals a strong but nuanced relationship between the critic's score and the final quality rating, which is heavily dependent on the length of the generated text.
+
+* **Q1 (Shortest Outputs):** Shows the most dramatic effect. The mean rating jumps from a baseline of 54.5 to 89.0 for the top 5% of critic-scored posts, a ~35-point increase.
+    * Baseline (n=155): Mean Rating 54.5
+    * Top 20% (n=31):  Mean Rating 67.9
+    * Top 10% (n=16):  Mean Rating 72.7
+    * Top 5% (n=8):   Mean Rating 89.0
+
+* **Q2 (Med-Short Outputs):** Displays a strong positive trend. The mean rating rises from a baseline of 57.2 to 79.1 for the top 5%.
+    * Baseline (n=155): Mean Rating 57.2
+    * Top 20% (n=31):  Mean Rating 64.5
+    * Top 10% (n=16):  Mean Rating 71.5
+    * Top 5% (n=8):   Mean Rating 79.1
+
+* **Q3 (Med-Long Outputs):** Also shows a significant positive correlation. The mean rating increases from a baseline of 55.0 to 80.8 for the top 5%.
+    * Baseline (n=154): Mean Rating 55.0
+    * Top 20% (n=31):  Mean Rating 75.4
+    * Top 10% (n=16):  Mean Rating 79.6
+    * Top 5% (n=8):   Mean Rating 80.8
+
+* **Q4 (Longest Outputs):** Reveals the breakdown in the pattern. The critic's score becomes a neutral or negligible indicator. The mean rating for the top 5% (48.5) is slightly lower than the baseline (50.2).
+    * Baseline (n=155): Mean Rating 50.2
+    * Top 20% (n=31):  Mean Rating 55.2
+    * Top 10% (n=16):  Mean Rating 49.6
+    * Top 5% (n=8):   Mean Rating 48.5
+
+### Hypothesis for Future Work
+
+The performance degradation observed in the longest posts (Q4) suggests a limitation of the current approach. Our hypothesis is that the critic is **undertrained**, as it was exposed to only ~15,000 examples (~9k generated, ~6k human).
+
+We hypothesize that scaling up the critic's training data would lead to two significant improvements:
+1.  **Greater Accuracy**: An even stronger and more reliable correlation between the critic's score and true quality.
+2.  **Improved Generalization**: The critic would learn the nuances of longer narratives, resolving the performance drop-off currently seen in the longest quartile of posts.
+
+---
+
+## 5. Appendix: Minimal Commands
+
+-   **Train SFT Generator**:
+    ```bash
+    python generator/sft_bfloat.py
+    ```
+-   **Generate Synthetic Dataset**:
+    ```bash
+    python generator/gen_bfloat16.py
+    ```
+-   **Train Critic Head**:
+    ```bash
+    python generator/linear_head.py
+    ```
+-   **Evaluate with Gemini API (Requires API Key)**:
+    ```bash
+    python generator/eval.py
+    ```
+-   **Plot Final Results**:
+    ```bash
+    python generator/plot_result.py
+    ```
